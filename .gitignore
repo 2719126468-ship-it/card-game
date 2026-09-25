@@ -1,3 +1,4 @@
+# Android 构建产物
 *.iml
 .gradle/
 build/
@@ -7,3 +8,9 @@ local.properties
 app/build/
 *.apk
 *.keystore
+*.bak
+
+# 强制保留资源
+!app/src/main/res/raw/*.wav
+!app/src/main/assets/cards/images/*.png
+!app/src/main/assets/cards/cards.json
