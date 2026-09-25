@@ -25,10 +25,9 @@ object EffectText {
                 .removePrefix("attack:")
                 .removePrefix("destroy:")
 
-            // delete+observe:1 这类组合
-            val plusParts = body.split("+")
+            // delete+observe:1 这类组合（"awareness:+500" 的 + 是数值符号，不拆）
             var first = true
-            plusParts.forEach { sub ->
+            EffectSyntax.splitCombined(body).forEach { sub ->
                 if (!first) sb.append("，")
                 first = false
                 sb.append(trigger).append(translateOne(sub.trim()))
@@ -42,7 +41,8 @@ object EffectText {
     private fun translateOne(raw: String): String {
         if (raw.isEmpty()) return ""
         val parts = raw.split(":")
-        val action = parts.getOrNull(0) ?: return raw
+        val rawAction = parts.getOrNull(0) ?: return raw
+        val action = EffectSyntax.alias(rawAction)
         val valueStr = parts.getOrNull(1)?.trim() ?: ""
         val value = valueStr.replace("+", "").replace("-", "").toIntOrNull() ?: 0
         val neg = valueStr.startsWith("-")
@@ -57,6 +57,8 @@ object EffectText {
             "restore"       -> "恢复（复活墓地 4 星以下）"
             "control"       -> "控制 +$value（吸取 LP）"
             "inspect"       -> "检查 ×$value（削对方卡组）"
+            "damage"        -> "伤害 $value（削对方 LP）"
+            "heal"          -> "治疗 +$value（恢复 LP）"
             else            -> raw
         }
     }

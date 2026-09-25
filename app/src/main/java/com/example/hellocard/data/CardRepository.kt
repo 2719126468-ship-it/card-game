@@ -1,6 +1,7 @@
 package com.example.hellocard.data
 
 import android.content.Context
+import com.example.hellocard.Dimens
 import org.json.JSONArray
 
 object CardRepository {
@@ -49,35 +50,39 @@ object CardRepository {
         return Pair(list, uid)
     }
 
-    /** 默认主卡组：40 张（人类普通卡 4 份） */
+    /** 默认主卡组（人类普通卡循环填充） */
     fun defaultMainDeckIds(): List<String> {
         val pool = getMainDeckPool("human").map { it.id }
+        if (pool.isEmpty()) return emptyList()
         val result = mutableListOf<String>()
-        while (result.size < 40) result.addAll(pool)
-        return result.take(40)
+        while (result.size < Dimens.MAIN_DECK_SIZE) result.addAll(pool)
+        return result.take(Dimens.MAIN_DECK_SIZE)
     }
 
-    /** 默认额外卡组：15 张（人类额外卡，同名最多 3） */
+    /** 默认额外卡组（人类额外卡循环填充） */
     fun defaultExtraDeckIds(): List<String> {
         val pool = getExtraDeckPool("human").map { it.id }
+        if (pool.isEmpty()) return emptyList()
         val result = mutableListOf<String>()
-        while (result.size < 15) result.addAll(pool)
-        return result.take(15)
+        while (result.size < Dimens.EXTRA_DECK_SIZE) result.addAll(pool)
+        return result.take(Dimens.EXTRA_DECK_SIZE)
     }
 
-    /** AI 主卡组：40 张 */
+    /** AI 主卡组 */
     fun aiMainDeckIds(): List<String> {
         val pool = getMainDeckPool("ai").map { it.id }
+        if (pool.isEmpty()) return emptyList()
         val result = mutableListOf<String>()
-        while (result.size < 40) result.addAll(pool)
-        return result.take(40)
+        while (result.size < Dimens.MAIN_DECK_SIZE) result.addAll(pool)
+        return result.take(Dimens.MAIN_DECK_SIZE)
     }
 
-    /** AI 额外卡组：15 张 */
+    /** AI 额外卡组 */
     fun aiExtraDeckIds(): List<String> {
         val pool = getExtraDeckPool("ai").map { it.id }
+        if (pool.isEmpty()) return emptyList()
         val result = mutableListOf<String>()
-        while (result.size < 15) result.addAll(pool)
-        return result.take(15)
+        while (result.size < Dimens.EXTRA_DECK_SIZE) result.addAll(pool)
+        return result.take(Dimens.EXTRA_DECK_SIZE)
     }
 }

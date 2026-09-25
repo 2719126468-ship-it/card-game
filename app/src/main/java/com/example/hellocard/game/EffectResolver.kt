@@ -1,5 +1,7 @@
 package com.example.hellocard.game
 
+import com.example.hellocard.Dimens
+import com.example.hellocard.EffectSyntax
 import com.example.hellocard.data.Card
 import com.example.hellocard.data.PlayerState
 
@@ -35,14 +37,9 @@ class EffectResolver(private val log: (String) -> Unit) {
     private fun resolve(card: Card, trigger: String, owner: PlayerState, opponent: PlayerState) {
         if (card.effect.isBlank()) return
         card.effect.split(";").forEach { raw ->
-            // "delete+observe:1" 这类组合要先拆
-            val plusParts = raw.trim().split("+")
-            if (plusParts.size > 1) {
-                plusParts.forEach { sub ->
-                    runOne(sub.trim(), trigger, card, owner, opponent)
-                }
-            } else {
-                runOne(raw.trim(), trigger, card, owner, opponent)
+            // "delete+observe:1" 这类组合要拆开，但 "awareness:+500" 的 + 是数值符号
+            EffectSyntax.splitCombined(raw.trim()).forEach { sub ->
+                runOne(sub.trim(), trigger, card, owner, opponent)
             }
         }
     }
@@ -58,7 +55,8 @@ class EffectResolver(private val log: (String) -> Unit) {
         val actionParts = if (hasTrigger) parts.drop(1) else parts
         if (actualTrigger != trigger) return
 
-        val action = actionParts.getOrNull(0) ?: return
+        val rawAction = actionParts.getOrNull(0) ?: return
+        val action = EffectSyntax.alias(rawAction)
         val valueStr = actionParts.getOrNull(1)?.trim() ?: ""
         val value = valueStr.replace("+", "").replace("-", "").toIntOrNull() ?: 0
         val isNegative = valueStr.startsWith("-")
@@ -97,8 +95,8 @@ class EffectResolver(private val log: (String) -> Unit) {
                 }
             }
             "restore" -> {
-                val t = owner.graveyard.filter { it.level <= 4 }.randomOrNull()
-                if (t != null && owner.field.size < 5) {
+                val t = owner.graveyard.filter { it.level <= Dimens.RESTORE_MAX_LEVEL }.randomOrNull()
+                if (t != null && owner.field.size < Dimens.MAX_FIELD_SIZE) {
                     owner.graveyard.remove(t)
                     owner.field.add(t)
                     log("【${card.name}】restore 「${t.name}」")
@@ -115,6 +113,14 @@ class EffectResolver(private val log: (String) -> Unit) {
                     if (c != null) opponent.graveyard.add(c)
                 }
                 log("【${card.name}】inspect × $value")
+            }
+            "damage" -> {
+                opponent.life -= value
+                log("【${card.name}】damage $value")
+            }
+            "heal" -> {
+                owner.life += value
+                log("【${card.name}】heal +$value")
             }
         }
     }

@@ -1,7 +1,6 @@
 package com.example.hellocard
 
 import android.app.Activity
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -11,7 +10,6 @@ import android.widget.*
 import com.example.hellocard.data.Card
 import com.example.hellocard.data.CardRepository
 import com.example.hellocard.data.DeckStorage
-import java.io.InputStream
 
 class DeckEditActivity : Activity() {
 
@@ -195,9 +193,14 @@ class DeckEditActivity : Activity() {
         }
     }
 
+    /** 统一入口：异步加载 assets 卡图 */
+    private fun loadAssetImage(target: ImageView, path: String, sizePx: Int) {
+        CardImageLoader.load(this, target, path, sizePx, Dimens.IMG_CORNER_RADIUS)
+    }
+
     private fun cardTile(card: Card, count: Int, removable: Boolean = false, onClick: () -> Unit): View {
-        val lp = LinearLayout.LayoutParams(110, 155)
-        lp.marginEnd = 8
+        val lp = LinearLayout.LayoutParams(Dimens.EDIT_TILE_WIDTH, Dimens.EDIT_TILE_HEIGHT)
+        lp.marginEnd = Dimens.CARD_MARGIN_END
         val v = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -213,12 +216,9 @@ class DeckEditActivity : Activity() {
 
         val imgFrame = FrameLayout(this)
         val img = ImageView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(90, 90)
+            layoutParams = FrameLayout.LayoutParams(Dimens.EDIT_IMG_SIZE, Dimens.EDIT_IMG_SIZE)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            try {
-                val s: InputStream = assets.open(card.image)
-                setImageBitmap(BitmapFactory.decodeStream(s))
-            } catch (e: Exception) { setBackgroundColor(Color.DKGRAY) }
+            loadAssetImage(this, card.image, Dimens.EDIT_IMG_SIZE)
         }
         imgFrame.addView(img)
         v.addView(imgFrame)

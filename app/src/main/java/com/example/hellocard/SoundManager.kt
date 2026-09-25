@@ -8,7 +8,7 @@ import android.media.SoundPool
 class SoundManager(private val context: Context) {
 
     private val soundPool: SoundPool = SoundPool.Builder()
-        .setMaxStreams(8)
+        .setMaxStreams(Dimens.SOUND_POOL_MAX_STREAMS)
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_GAME)
@@ -51,7 +51,7 @@ class SoundManager(private val context: Context) {
         }
         bgmPlayer = MediaPlayer.create(context, resId)?.apply {
             isLooping = true
-            setVolume(0.4f, 0.4f)
+            setVolume(Dimens.BGM_VOLUME, Dimens.BGM_VOLUME)
             start()
         }
         currentBgm = name

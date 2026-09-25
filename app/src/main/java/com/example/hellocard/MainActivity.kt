@@ -3,19 +3,20 @@ package com.example.hellocard
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.*
 import com.example.hellocard.data.Card
 import com.example.hellocard.data.CardRepository
 import com.example.hellocard.data.DeckStorage
+import com.example.hellocard.game.AIStep
 import com.example.hellocard.game.GameState
 import com.example.hellocard.game.Phase
-import java.io.InputStream
 
 class MainActivity : Activity() {
 
@@ -46,8 +47,11 @@ class MainActivity : Activity() {
     private lateinit var myGraveTv: TextView
     private lateinit var myExileTv: TextView
 
-    private var lastMyLife = 8000
-    private var lastOppLife = 8000
+    private var lastMyLife = Dimens.STARTING_LIFE
+    private var lastOppLife = Dimens.STARTING_LIFE
+    private val aiHandler = Handler(Looper.getMainLooper())
+    private var aiPlaying = false
+    private var aiStepRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,9 +65,18 @@ class MainActivity : Activity() {
         showMenu()
     }
 
-    override fun onPause() { super.onPause(); soundManager.pauseBgm() }
+    override fun onPause() {
+        super.onPause()
+        soundManager.pauseBgm()
+        aiPlaying = false
+        aiStepRunnable?.let { aiHandler.removeCallbacks(it) }
+    }
     override fun onResume() { super.onResume(); soundManager.resumeBgm() }
-    override fun onDestroy() { super.onDestroy(); soundManager.release() }
+    override fun onDestroy() {
+        super.onDestroy()
+        aiHandler.removeCallbacksAndMessages(null)
+        soundManager.release()
+    }
 
     private fun showMenu() {
         animationManager.ambientStop()
@@ -222,16 +235,16 @@ class MainActivity : Activity() {
             setPadding(0, 8, 0, 4)
         }
         oppExtraZone = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        oppExtraZone.addView(zoneBox(70, 55, extraZoneStyle()))
+        oppExtraZone.addView(zoneBox(Dimens.ZONE_SIDE_W, Dimens.ZONE_SIDE_H, extraZoneStyle()))
         oppTopRow.addView(oppExtraZone); oppTopRow.addView(space(8))
         oppFieldZone = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        oppFieldZone.addView(zoneBox(70, 55, fieldZoneStyle()))
+        oppFieldZone.addView(zoneBox(Dimens.ZONE_SIDE_W, Dimens.ZONE_SIDE_H, fieldZoneStyle()))
         oppTopRow.addView(oppFieldZone); oppTopRow.addView(space(8))
         oppSpellZone = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        repeat(5) { oppSpellZone.addView(zoneBox(50, 55, spellZoneStyle())) }
+        repeat(Dimens.MAX_SPELL_ZONE) { oppSpellZone.addView(zoneBox(Dimens.ZONE_SPELL_W, Dimens.ZONE_SPELL_H, spellZoneStyle())) }
         oppTopRow.addView(oppSpellZone)
         content.addView(oppTopRow)
 
@@ -277,13 +290,13 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        repeat(5) { mySpellZone.addView(zoneBox(50, 55, spellZoneStyle())) }
+        repeat(Dimens.MAX_SPELL_ZONE) { mySpellZone.addView(zoneBox(Dimens.ZONE_SPELL_W, Dimens.ZONE_SPELL_H, spellZoneStyle())) }
         myTopRow.addView(mySpellZone); myTopRow.addView(space(8))
         myFieldZone = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        myFieldZone.addView(zoneBox(70, 55, fieldZoneStyle()))
+        myFieldZone.addView(zoneBox(Dimens.ZONE_SIDE_W, Dimens.ZONE_SIDE_H, fieldZoneStyle()))
         myTopRow.addView(myFieldZone); myTopRow.addView(space(8))
         myExtraZone = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setOnClickListener { showExtraDeckDialog() } }
-        myExtraZone.addView(zoneBox(70, 55, extraZoneStyle()))
+        myExtraZone.addView(zoneBox(Dimens.ZONE_SIDE_W, Dimens.ZONE_SIDE_H, extraZoneStyle()))
         myTopRow.addView(myExtraZone)
         content.addView(myTopRow)
 
@@ -362,12 +375,17 @@ class MainActivity : Activity() {
         background = style
     }
 
+    /** 统一入口：异步加载 assets 卡图 */
+    private fun loadAssetImage(target: ImageView, path: String, sizePx: Int, radius: Float) {
+        CardImageLoader.load(this, target, path, sizePx, radius)
+    }
+
     private fun cardView(card: Card, owner: String, selected: Boolean, small: Boolean = false): View {
-        val w = if (small) 100 else 140
-        val h = if (small) 140 else 195
-        val imgS = if (small) 80 else 120
+        val w = if (small) Dimens.CARD_WIDTH_SMALL else Dimens.CARD_WIDTH_NORMAL
+        val h = if (small) Dimens.CARD_HEIGHT_SMALL else Dimens.CARD_HEIGHT_NORMAL
+        val imgS = if (small) Dimens.CARD_IMG_SIZE_SMALL else Dimens.CARD_IMG_SIZE_NORMAL
         val lp = LinearLayout.LayoutParams(w, h)
-        lp.marginEnd = 8
+        lp.marginEnd = Dimens.CARD_MARGIN_END
         val v = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -390,10 +408,8 @@ class MainActivity : Activity() {
         val img = ImageView(this).apply {
             layoutParams = FrameLayout.LayoutParams(imgS, imgS)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            try {
-                val stream: InputStream = assets.open(card.image)
-                setImageBitmap(BitmapFactory.decodeStream(stream))
-            } catch (e: Exception) { setBackgroundColor(Color.DKGRAY) }
+            // 使用 Coil 异步加载 assets 图片
+            loadAssetImage(this, card.image, imgS, Dimens.IMG_CORNER_RADIUS)
         }
         imgFrame.addView(img)
 
@@ -531,15 +547,15 @@ class MainActivity : Activity() {
 
         // 对手怪兽区
         oppMonsterZone.removeAllViews()
-        repeat(5 - game.opponent.field.size) {
-            oppMonsterZone.addView(zoneBox(140, 195, monsterZoneStyle()))
+        repeat(Dimens.MAX_FIELD_SIZE - game.opponent.field.size) {
+            oppMonsterZone.addView(zoneBox(Dimens.ZONE_MONSTER_W, Dimens.ZONE_MONSTER_H, monsterZoneStyle()))
         }
         game.opponent.field.forEach { c -> oppMonsterZone.addView(cardView(c, "opp", false)) }
 
         // 我方怪兽区
         myMonsterZone.removeAllViews()
-        repeat(5 - game.player.field.size) {
-            myMonsterZone.addView(zoneBox(140, 195, monsterZoneStyle()))
+        repeat(Dimens.MAX_FIELD_SIZE - game.player.field.size) {
+            myMonsterZone.addView(zoneBox(Dimens.ZONE_MONSTER_W, Dimens.ZONE_MONSTER_H, monsterZoneStyle()))
         }
         game.player.field.forEach { c ->
             val sel = game.selectedAttacker?.uid == c.uid
@@ -551,24 +567,24 @@ class MainActivity : Activity() {
         if (game.opponent.extraMonster != null) {
             oppExtraZone.addView(cardView(game.opponent.extraMonster!!, "opp", false, small = true))
         } else {
-            oppExtraZone.addView(zoneBox(70, 55, extraZoneStyle()))
+            oppExtraZone.addView(zoneBox(Dimens.ZONE_SIDE_W, Dimens.ZONE_SIDE_H, extraZoneStyle()))
         }
         myExtraZone.removeAllViews()
         if (game.player.extraMonster != null) {
             myExtraZone.addView(cardView(game.player.extraMonster!!, "me", game.selectedAttacker?.uid == game.player.extraMonster!!.uid, small = true))
         } else {
-            myExtraZone.addView(zoneBox(70, 55, extraZoneStyle()))
+            myExtraZone.addView(zoneBox(Dimens.ZONE_SIDE_W, Dimens.ZONE_SIDE_H, extraZoneStyle()))
         }
 
         // 场地魔法
         oppFieldZone.removeAllViews()
         if (game.opponent.fieldSpell != null) {
             oppFieldZone.addView(cardView(game.opponent.fieldSpell!!, "spell", false, small = true))
-        } else oppFieldZone.addView(zoneBox(70, 55, fieldZoneStyle()))
+        } else oppFieldZone.addView(zoneBox(Dimens.ZONE_SIDE_W, Dimens.ZONE_SIDE_H, fieldZoneStyle()))
         myFieldZone.removeAllViews()
         if (game.player.fieldSpell != null) {
             myFieldZone.addView(cardView(game.player.fieldSpell!!, "spell", false, small = true))
-        } else myFieldZone.addView(zoneBox(70, 55, fieldZoneStyle()))
+        } else myFieldZone.addView(zoneBox(Dimens.ZONE_SIDE_W, Dimens.ZONE_SIDE_H, fieldZoneStyle()))
 
         // 魔陷区（展示已有卡，其余留空格）
         renderSpellZone(oppSpellZone, game.opponent.spellZone, "opp")
@@ -592,16 +608,156 @@ class MainActivity : Activity() {
     private fun renderSpellZone(parent: LinearLayout, cards: List<Card>, owner: String) {
         parent.removeAllViews()
         cards.forEach { c -> parent.addView(cardView(c, "spell", false, small = true)) }
-        repeat(5 - cards.size) { parent.addView(zoneBox(50, 55, spellZoneStyle())) }
+        repeat((Dimens.MAX_SPELL_ZONE - cards.size).coerceAtLeast(0)) { parent.addView(zoneBox(Dimens.ZONE_SPELL_W, Dimens.ZONE_SPELL_H, spellZoneStyle())) }
     }
 
     private fun onActionClicked() {
-        if (!game.isPlayerTurn || game.gameOver) return
+        if (!game.isPlayerTurn || game.gameOver || aiPlaying) return
         soundManager.play("click")
         when (game.phase) {
             Phase.MAIN -> { animationManager.phaseChange(); game.advancePhase(); refresh() }
-            Phase.BATTLE -> { soundManager.play("turn"); animationManager.turnChange(); game.endTurn(); refresh(); checkOver() }
+            Phase.BATTLE -> { onEndTurn() }
         }
+    }
+
+    private fun onEndTurn() {
+        if (game.gameOver || aiPlaying) return
+        soundManager.play("turn")
+        animationManager.turnChange()
+        game.startAITurn()
+        refresh()
+        root.postDelayed({ playAITurn() }, Dimens.AI_STEP_DELAY)
+    }
+
+    private fun playAITurn() {
+        // startAITurn() 阶段就可能已分出胜负（对方卡组耗尽），此时必须走结算
+        if (game.gameOver) {
+            refresh()
+            checkOver()
+            return
+        }
+        val steps = game.planAITurn()
+        if (steps.isEmpty()) {
+            finishAITurn()
+            return
+        }
+        aiPlaying = true
+        var i = 0
+        fun next() {
+            if (game.gameOver || !aiPlaying) {
+                aiPlaying = false
+                finishAITurn()
+                return
+            }
+            if (i >= steps.size) {
+                aiPlaying = false
+                finishAITurn()
+                return
+            }
+            val step = steps[i++]
+            executeAndAnimate(step)
+            val delay = when (step.kind) {
+                "attack", "direct" -> Dimens.AI_DELAY_ATTACK
+                "extra" -> Dimens.AI_DELAY_EXTRA
+                "summon", "spell", "field" -> Dimens.AI_DELAY_SUMMON
+                else -> Dimens.AI_DELAY_DEFAULT
+            }
+            aiStepRunnable = Runnable { next() }
+            aiHandler.postDelayed(aiStepRunnable!!, delay)
+        }
+        next()
+    }
+
+    private fun executeAndAnimate(step: AIStep) {
+        when (step.kind) {
+            "extra" -> {
+                val card = step.sourceCard ?: return
+                game.executeAIStep(step)
+                refresh()
+                soundManager.play("summon")
+                val v = findCardView(oppExtraZone, card.uid)
+                if (v != null) animationManager.extraSummon(v)
+                else animationManager.particleSummon(root)
+            }
+            "summon" -> {
+                val card = step.sourceCard ?: return
+                game.executeAIStep(step)
+                refresh()
+                soundManager.play("summon")
+                val v = findCardView(oppMonsterZone, card.uid)
+                if (v != null) animationManager.flip3D(v)
+                else animationManager.particleSummon(root)
+            }
+            "spell", "field" -> {
+                game.executeAIStep(step)
+                refresh()
+                soundManager.play("effect")
+                if (step.kind == "field") {
+                    animationManager.fieldSpellActivate(root)
+                } else {
+                    animationManager.particleEffect(root)
+                }
+            }
+            "attack" -> {
+                val a = step.sourceCard ?: return
+                val aView = findCardView(oppMonsterZone, a.uid)
+                    ?: findCardView(oppExtraZone, a.uid)
+                val tView = findCardView(myMonsterZone, step.targetCard?.uid ?: -1)
+                    ?: findCardView(myExtraZone, step.targetCard?.uid ?: -1)
+                    ?: findFirstView(myMonsterZone)
+                soundManager.play("attack")
+                if (aView != null && tView != null) {
+                    animationManager.attack(aView, tView,
+                        onHit = { animationManager.screenShake() },
+                        onEnd = {
+                            game.executeAIStep(step)
+                            refresh()
+                            checkOver()
+                        })
+                } else {
+                    game.executeAIStep(step)
+                    refresh()
+                    checkOver()
+                }
+            }
+            "direct" -> {
+                val a = step.sourceCard ?: return
+                val aView = findCardView(oppMonsterZone, a.uid)
+                    ?: findCardView(oppExtraZone, a.uid)
+                val loc = IntArray(2); myLife.getLocationOnScreen(loc)
+                soundManager.play("attack")
+                if (aView != null) {
+                    animationManager.attackDirect(aView, loc[0] + 100f, loc[1] + 20f,
+                        onHit = { animationManager.screenShake() },
+                        onEnd = {
+                            game.executeAIStep(step)
+                            refresh()
+                            checkOver()
+                        })
+                } else {
+                    game.executeAIStep(step)
+                    refresh()
+                    checkOver()
+                }
+            }
+        }
+    }
+
+    private fun findFirstView(parent: LinearLayout): View? {
+        for (i in 0 until parent.childCount) {
+            val t = parent.getChildAt(i).tag
+            if (t is Int && t > 0) return parent.getChildAt(i)
+        }
+        return null
+    }
+
+    private fun finishAITurn() {
+        if (game.gameOver) { checkOver(); return }
+        game.endAITurn()
+        refresh()
+        animationManager.turnChange()
+        soundManager.play("turn")
+        checkOver()
     }
 
     private fun onOpponentLifeClicked() {
@@ -681,7 +837,14 @@ class MainActivity : Activity() {
         }
         soundManager.play("click")
         when (c.cardType) {
-            "monster" -> showMonsterSummonDialog(c)
+            "monster" -> {
+                if (game.player.normalSummoned) {
+                    soundManager.play("error")
+                    Toast.makeText(this, "本回合已通常召唤过", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                showMonsterSummonDialog(c)
+            }
             "spell" -> {
                 if (game.activateSpell(game.player, c)) { soundManager.play("effect"); animationManager.particleEffect(root); refresh() }
                 else Toast.makeText(this, "无法发动（魔陷区已满）", Toast.LENGTH_SHORT).show()
@@ -698,11 +861,7 @@ class MainActivity : Activity() {
     }
 
     private fun showMonsterSummonDialog(c: Card) {
-        val tributes = when {
-            c.level <= 4 -> 0
-            c.level in 5..6 -> 1
-            else -> 2
-        }
+        val tributes = game.tributeCountFor(c)
         if (game.player.field.size < tributes) {
             soundManager.play("error")
             Toast.makeText(this, "需要 $tributes 个祭品", Toast.LENGTH_SHORT).show()
@@ -795,10 +954,7 @@ class MainActivity : Activity() {
         val img = ImageView(this).apply {
             layoutParams = LinearLayout.LayoutParams(400, 400)
             scaleType = ImageView.ScaleType.CENTER_CROP
-            try {
-                val s: InputStream = assets.open(card.image)
-                setImageBitmap(BitmapFactory.decodeStream(s))
-            } catch (e: Exception) { setBackgroundColor(Theme.BG_ZONE) }
+            loadAssetImage(this, card.image, Dimens.DETAIL_IMG_SIZE, 12f)
         }
         v.addView(img, LinearLayout.LayoutParams(400, 400).apply { gravity = Gravity.CENTER_HORIZONTAL })
 
@@ -851,14 +1007,11 @@ class MainActivity : Activity() {
                 setBackgroundColor(Theme.BG_CARD)
                 isClickable = true
             }
-            // 小缩略图
+            // 小缩略图（Coil 异步加载）
             val thumb = ImageView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(72, 72)
                 scaleType = ImageView.ScaleType.CENTER_CROP
-                try {
-                    val s: InputStream = assets.open(c.image)
-                    setImageBitmap(BitmapFactory.decodeStream(s))
-                } catch (e: Exception) { setBackgroundColor(Theme.BG_ZONE) }
+                loadAssetImage(this, c.image, Dimens.LIST_THUMB_SIZE, Dimens.THUMB_CORNER_RADIUS)
             }
             row.addView(thumb)
 
