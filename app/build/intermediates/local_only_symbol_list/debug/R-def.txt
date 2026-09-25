@@ -1,0 +1,22 @@
+R_DEF: Internal format may change without notice
+local
+drawable particle_cyan
+drawable particle_gold
+drawable particle_pink
+drawable particle_red
+drawable particle_white
+raw attack
+raw bgm_battle
+raw bgm_menu
+raw bgm_win
+raw click
+raw damage
+raw destroy
+raw draw
+raw effect
+raw error
+raw heal
+raw lose
+raw summon
+raw turn
+raw win
